@@ -1,0 +1,105 @@
+from mail_aru import start_mail,end_mail
+
+aru_start,aru_t1=start_mail("NACONA_STR_20199338_brc_conf_bkp")
+
+import os
+import paramiko
+import datetime
+from email.message import Message
+import smtplib
+from email.MIMEMultipart import MIMEMultipart
+from email.MIMEText import MIMEText
+
+
+date=datetime.date.strftime(datetime.date.today(),"%y-%m-%d")
+
+
+def config_collect(ip,name,path):
+    try:
+        ssh=paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(ip,username="xmluser",password="xml1user")
+        string=name+'\t'
+        stdin,stdout,stderr=ssh.exec_command("configUpload -all -p sftp 161.162.164.215,root,"+path+",Passw0rd123",get_pty=True)
+        #if stderr:print stderr.readlines()
+        val= stdout.read(1)
+        if  stdout.channel.recv_ready():
+            stdin.write('Passw0rd123\n')
+            stdin.flush()
+            data=stdout.readlines()
+        #print data
+            if data[-1].startswith("configUpload complete"):
+                string+='\t'+data[-1]
+            else:
+                string+='\t'+'config upload failed'+'\n'
+        else:
+            string+='\t'+'config upload failed'+'\n'
+    except Exception as e:
+        return name+'\t'+'\t'+'unable to login'+'\n'
+    #print stderr.readlines()
+    #print stdout.readlines()
+    ssh.close()
+    print string
+    return string
+
+"""def supportsave_collect(ip,name,path):
+    ssh=paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(ip,username="xmluser",password="xml1user")
+    string=name+'\t'
+    stdin,stdout,stderr=ssh.exec_command("configUpload -all -p sftp 161.162.164.215,root,"+path+",Passw0rd123",get_pty=True)
+    #if stderr:
+     #  print(stderr.readlines())
+    val=stdout.read(1)
+ #   print(val,stdout.channel.recv_ready())
+    if  stdout.channel.recv_ready():
+        #print stdout.channel.recv_ready()
+        stdin.write('Passw0rd123\n')
+        #stdin.flush()
+        data=stdout.readlines()
+#        print data
+       # string+= data[-1]
+        #print data
+        if data[-1].startswith("configUpload complete"):
+            string+= data[-1]
+        else:
+            string+="Config_upload  failed"+'\n'
+    else:
+        print "config_upload failed"
+        string+='\t'.join(stderr.readlines())
+        
+
+    #print stderr.readlines()
+    #print stdout.readlines()
+    ssh.close()
+    return string
+"""
+def mail(html_data):    
+    fromaddr = "CONA_SAA@capgemini.com" #CONA-SAA ADMIN
+    toaddr="conastorage.nar@capgemini.com"
+    ccaddr="prasanna.kandregula@capgemini.com" 
+    msg = MIMEMultipart()
+    msg['From'] = fromaddr
+    msg['To'] = toaddr
+    msg['cc']=ccaddr
+    msg['Subject'] = "SDC-ConfigUploads"
+    msg.attach(MIMEText(html_data,'plain'))
+    toaddrs=[toaddr]+[ccaddr]
+    server = smtplib.SMTP('161.162.144.164') #cona SMTP
+    text = msg.as_string()
+    print "Sending Mail..........\n"
+    server.sendmail(fromaddr,toaddrs,text)
+    print "Mail Sent Successfully..........\n"
+    server.quit()
+
+
+ipaddresses=[('Cstorcore1a', '10.244.160.34'), ('cstorcore1b', '10.244.160.35'), ('cssanasw2', '10.244.160.39'), ('cssanbsw2', '10.244.160.40'), ('cstorfcip1', '10.244.160.36'), ('cstorfcip2', '10.244.160.37'), ('conasdc055', '10.244.160.55'), ('conasdc044', '10.244.160.44'), ('conasdc066', '10.244.160.66'), ('conasdc128', '10.244.160.128'), ('conasdc156', '10.244.160.156'), ('conasdc154', '10.244.160.154'), ('conasdc204', '10.244.160.204'), ('conasdc216', '10.244.160.216'), ('conasdc056', '10.244.160.56'), ('conasdc045', '10.244.160.45'), ('conasdc067', '10.244.160.67'), ('conasdc129', '10.244.160.129'), ('conasdc157', '10.244.160.157'), ('conasdc155', '10.244.160.155'), ('conasdc205', '10.244.160.205'), ('conasdc217', '10.244.160.217')]
+
+response=''
+#ipaddresses=[('Cstorcore1a', '10.244.160.34'), ('cstorcore1b', '10.244.160.35')]
+for name,ip in ipaddresses:
+    path='/SAA/switch/sdc_switchconfigs/'+name+'/'+name+'_'+date+'.txt'
+    response+=config_collect(ip,name,path)
+mail(response)
+
+end_mail("NACONA_STR_20199338_brc_conf_bkp","success",aru_start,aru_t1)

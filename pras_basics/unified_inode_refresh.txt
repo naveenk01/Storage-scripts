@@ -1,0 +1,59 @@
+import paramiko
+import os,sys,time,smtplib
+from email.message import Message
+from email.MIMEMultipart import MIMEMultipart
+from email.MIMEText import MIMEText
+
+# Input arguments for the unified device to refresh
+ip=sys.argv[1]
+user=sys.argv[2]
+password=sys.argv[3]
+
+def mail(html_data):
+    fromaddr = "CONA_SAA@capgemini.com" #CONA-SAA ADMIN
+    toaddr="pkandreg@capgemini.com" #conastorage.nar@capgemini.com"
+    ccaddr="prasanna.kandregula@capgemini.com"
+    msg = MIMEMultipart()
+    msg['From'] = fromaddr
+    msg['To'] = toaddr
+    msg['cc']=ccaddr
+    msg['Subject'] = "Inode refresh status-{}".format(ip)
+    msg.attach(MIMEText(html_data,'plain'))
+    toaddrs=[toaddr]+[ccaddr]
+    server = smtplib.SMTP('161.162.144.164') #cona SMTP
+    text = msg.as_string()
+    print "Sending Mail..........\n"
+    server.sendmail(fromaddr,toaddrs,text)
+    print "Mail Sent Successfully..........\n"
+    server.quit()
+
+def refresh():
+    output=''
+    try:
+        ssh=paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy()) 
+        ssh.connect(ip,username=user,password=password)
+        stdin,stdout,stderr=ssh.exec_command("lsfs -Y")
+        data= stdout.readlines()
+        filesystems =[line.split(':')[7] for line in data[1:]]
+        print(filesystems)
+        filesystems=["test_fs","test_fs2"]
+        print("changed to test")
+        print(filesystems)
+        for fs in filesystems:
+            print("lsfset {} -u".format(fs))
+            stdin,stdout,stderr=ssh.exec_command("lsfset {} -u".format(fs))
+            while stdout.channel.recv_exit_status() != 0:
+                time.sleep(30)
+            print("{} \t {}".format(fs,"\t".join(stdout.readlines())) )
+            output+="{} \t {}".format(fs,"\t".join(stdout.readlines())) 
+            mail(output)
+        ssh.close()
+    except Exception as e:
+        print(str(e))
+        output+=str(e)
+        mail(output)
+    return output
+
+refresh()
+

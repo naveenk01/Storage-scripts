@@ -1,0 +1,162 @@
+
+from mail_aru import start_mail,end_mail
+
+aru_start,aru_t1=start_mail("NACONA_STR_20199352_Snapshot_main")
+
+import MySQLdb
+import sys
+import smtplib
+from email.MIMEMultipart import MIMEMultipart
+from email.MIMEText import MIMEText
+from email.MIMEBase import MIMEBase
+from email import encoders
+from xiv_snapshot import XIV_Snapshot
+from v7k_snapshot import V7k_Snapshot
+import os,sys
+
+
+def mail(html_data, sub,task_num=None):
+    fromaddr = "CONA-SAA@capgemini.com"
+    toaddr = "conastorage.nar@capgemini.com"
+    ccaddr="naveek@capgemini.com"
+    msg = MIMEMultipart()
+    msg['From'] = fromaddr
+    msg['To'] = toaddr
+    msg['cc'] = ccaddr
+    msg['Subject'] = sub
+    if os.path.exists(logfile_path):
+        if os.path.getsize(logfile_path) > 0:
+            attachment = open(logfile_path, "rb")
+            part = MIMEBase('application', 'octet-stream')
+            part.set_payload((attachment).read())
+            encoders.encode_base64(part)
+            part.add_header('Content-Disposition', "attachment; filename= %s" % "{}.txt".format(task_num))
+            part.add_header('Content-Disposition', "attachment; filename= %s" % "{}_FAILURE_LOGS.txt".format(task_num))
+            msg.attach(part)
+    msg.attach(MIMEText(html_data, 'html'))
+    toaddrs=[toaddr]+[ccaddr]
+    server = smtplib.SMTP('161.162.144.164')
+    text = msg.as_string()
+    print("Sending Mail..........\n")
+    #server.sendmail(fromaddr,['pkandreg@capgemini.com'], text)
+    server.sendmail(fromaddr, toaddrs, text)
+    print("Mail Sent Successfully..........\n")
+    server.quit()
+
+
+def fetch_details(ticket_num):
+    xiv_lun_uids = list()
+    snapshot_details = dict()
+    dbh = MySQLdb.connect(host='127.0.0.1', user='cmdb', passwd='Cmdb@2015', db='storapp')
+    cursor = dbh.cursor()
+    cursor.execute("select hostname,volumename, uid from snapshot where ticketnumber = '{0}'".format(ticket_num))
+    numrows = int(cursor.rowcount)
+    print numrows
+    for x in range(0, numrows):
+        row = cursor.fetchone()
+        print(row)
+        if "," not in row[1] and "," not in row[-1]:
+            if row[2].startswith("0017"):
+                if 'XIV' not in snapshot_details:
+                    snapshot_details['XIV'] = dict()
+                xiv_lun_uids.append(row[-1])
+                snapshot_details['XIV'][row[0]] = [row[-1]]
+            elif row[2].startswith("6005"):
+                if 'V7k' not in snapshot_details:
+	            print("Creating V7k DICt...")
+                    snapshot_details['V7k'] = dict()
+                snapshot_details['V7k'][row[0]] = [row[-1]]
+        else:
+            for vol, uid in zip(row[1].split(','), row[-1].split(',')):
+                if uid.startswith("0017"):
+                    if 'XIV' not in snapshot_details:
+                        snapshot_details['XIV'] = dict()
+                    snapshot_details['XIV'][row[0]] = row[-1].split(',')
+                    # xiv_lun_uids += row[-1].split(',')
+                    xiv_lun_uids += [uid]
+                elif uid.startswith("6005"):
+                    print("V7000 lun")
+                    if 'V7k' not in snapshot_details:
+                        snapshot_details['V7k'] = dict()
+                    if row[0] not in snapshot_details['V7k']:
+                        snapshot_details['V7k'][row[0]] = list()
+                    # snapshot_details['V7k'][row[0]] += row[-1].split(',')
+                    snapshot_details['V7k'][row[0]] += [uid]
+    #cursor.close()
+    print "Fetched Details..."
+    print type(snapshot_details)
+    return snapshot_details, xiv_lun_uids
+
+
+if __name__ == '__main__':
+
+    task_num = sys.argv[1]
+    print(task_num)
+    try:
+        path = "/var/logs/snapshotlogs/"
+        log_filename = "{}.txt".format(task_num)
+        logfile_path = os.path.join(path, log_filename)
+        print logfile_path
+        fp = open(log_filename, 'w')
+        #fp.close()
+        fp.write(task_num)
+        html = "<html><body><p><b>The Following Snapshots are created<p></p></b><br>"
+        try:
+            Snap_dict, XIV_lunuids = fetch_details(task_num)
+            fp.write(str(Snap_dict))
+            fp.write(str(XIV_lunuids))
+        except:
+            fp.write("Unable to fetch luns of the ticket")
+        fp.close()
+        print Snap_dict, XIV_lunuids 
+       # """
+        print("========snapdict===")
+        print(Snap_dict)
+#        sys.exit()
+ #       time.sleep(10)
+        if "XIV"  in Snap_dict:
+            xiv_snap = XIV_Snapshot(task_num, log_filename)
+            xiv_lun_snaps, xiv_cg_snaps = xiv_snap.read_input(XIV_lunuids)
+#            print("====================XIV SNAPS==============")
+ #           print(xiv_lun_snaps,xiv_cg_snaps)
+            if xiv_lun_snaps:
+                html += "<strong>XIV Standalone Snapshots:</strong><br>"
+                html += "<ol>"
+                print(["<li>{}({})</li>".format(snaps,uids['ip']) for snaps, uids in xiv_lun_snaps.iteritems()])
+                html += "".join(["<li>{} <strong>({})</strong>".format(snaps,uids['ip']) for snaps, uids in xiv_lun_snaps.iteritems()])
+                html += "</ol>"
+                print(html)
+            if xiv_cg_snaps:
+                html += "<strong>XIV CG Snapshots:</strong><br>"
+                html += "<ol>"
+                html += "".join(["<li>{} <strong>({})</strong></li>".format(snaps,uids['ip']) for snaps, uids in xiv_cg_snaps.iteritems()])
+                html += "</ol>"
+                print(html)
+
+        if "V7k"  in Snap_dict:
+            print("Entering V7k")
+            V7k = V7k_Snapshot(task_num, log_filename)
+            V7k_lun_snaps, V7k_cg_snaps = V7k.cg_check(Snap_dict['V7k'])
+#            print("===============v7k snaps==============")
+ #           print(V7k_lun_snaps, V7k_cg_snaps)
+            if V7k_lun_snaps:
+                html += "<strong>V7k Standalone Snapshots:</strong><br>"
+                html += "<ol>"
+                html += "".join(["<li>{0} <strong>({1})</strong></li>".format(snaps,uids['ip']) for snaps, uids in V7k_lun_snaps.iteritems()])
+                html += "</ol>"
+                print(html)
+            if V7k_cg_snaps:
+                html += "<strong>V7k CG Snapshots:</strong><br>"
+                html += "<ol>"
+                html += "".join(["<li>{0} <strong>({1})</strong></li>".format(snaps,uids['ip']) for snaps, uids in V7k_cg_snaps.iteritems()])
+                html += "</ol>"
+                
+        print(html)
+        mail(html,"CONA Snapshot Successful",task_num)
+    except Exception as err:
+        #pass
+        print(str(err))
+
+        mail("<html><p>{}</p></html>".format(str(err)), "CONA Snapshot Script Failed",task_num)
+end_mail("NACONA_STR_20199352_Snapshot_main","successful",aru_start,aru_t1)
+

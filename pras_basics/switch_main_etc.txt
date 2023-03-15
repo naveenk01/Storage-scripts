@@ -1,0 +1,159 @@
+
+from mail_aru import start_mail,end_mail
+
+aru_start,aru_t1=start_mail("NACONA_STR_20199350_switch_main.py")
+
+
+from switch_functions_etc import switch
+from mail_cona_etc import mail
+from datetime import datetime,date
+import sys
+headers=['Name','IP', 'UP time' ,'SupportSave','Health Status' , 'PortErrors']
+
+today=str(date.today())
+date=today
+
+#date=datetime.date.strftime(datetime.date.today(),"%y-%m-%d")
+#path='/SAA/switch/etc_supportsaves/'
+chassis_path='/SAA/switch/chasisfiles/etc_chassisshow_%s.txt'%date
+
+f=open(chassis_path,'w')
+f.write("Chassisshow of ETC core switches today %s\r\n=================================="%date)
+f.write("\r\n")
+f.close()
+
+
+fabriclog_path='/SAA/switch/fabriclog/etc_fabriclog_%s.txt'%date
+
+f=open(fabriclog_path,'w')
+f.write("fabriclogs  of ETC core switches today %s\r\n=================================="%date)
+f.write("\r\n")
+f.close()
+
+
+paths=[fabriclog_path]
+paths.append(chassis_path)
+
+mail_body="""
+            <html><head><style>
+            table, td, th {  
+            border: 2px solid #d8d7de;
+            text-align: Center;
+            }
+            table {
+            border-collapse: collapse;
+            
+            }
+            tr:nth-child(even){background-color: #f2f2f2;}
+            th{  padding-top: 6px;
+  padding-bottom: 6px;
+  text-align: Center;
+  background-color: #4CAF50;
+  color: white;} 
+            td {
+            padding: 6px;
+            }
+            </style>
+            </head>
+            <body>"""
+
+mail_body+="""Hi Team,<br> Please find the health status of ETC core switches for RCA Analysis.<br>
+            <table style="size:400px;"><tr><th>%s</th></tr>"""%("</th><th>".join(headers))
+
+table_rows=''
+port_headers="""<table><tr><th>Switch</th><th>port index</th><th>frames tx</th><th>frames rx</th><th>enc in</th><th>crc err</th><th>crc g_eof</th><th>too shrt</th><th>too long</th><th>bad eof</th><th>enc out</th><th>disc c3</th><th>link fail</th><th>loss sync</th><th>loss sig</th><th>frjt </th><th>fbsy </th><th>c3timeout tx</th><th>c3timeout rx</th><th>pcs err</th></tr>"""
+
+port_table=''
+switchports_status=''
+if __name__=="__main__":
+    ipaddresses=[('cpsanasw1' ,  '10.244.144.133'   ),
+ ('cpsanbsw1'  ,   '10.244.144.134' ),
+ ('cpsanasw2'  ,  '10.244.144.17'  ),
+ ('cpsanbsw2'  ,	'10.244.144.18')
+] 
+    objects=[]
+    header=False
+    for name,ip in ipaddresses:
+        print(ip,name)
+        switch_obj = switch(ip,name)
+        objects.append(switch_obj)
+        if switch_obj.connected:
+            if len(sys.argv)>1:
+                switch_obj.update_object(sys.argv[1])
+            else:
+                switch_obj.update_object()
+            switch_obj.chassisshow(chassis_path)
+            switch_obj.fabriclogs(fabriclog_path)
+            switch_obj.ssh.close()
+            table_rows+="<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td>".format(name,ip,switch_obj.uptime,"collected" if switch_obj.logs_collected else "not collected")
+            if switch_obj.health:
+                table_rows+="<td>Good</td>"
+            else:
+                table_rows+="<td bgcolor=red>Not Good</td>"
+            port_tab=''
+            if switch_obj.errors:
+                table_rows+="<td bgcolor=red>Yes</td></tr>"
+                paths.append(switch_obj.path)
+                header=True
+            else:
+                table_rows+="<td>No</td></tr>"
+   #             header=True
+            port_table+=switch_obj.html_table
+   
+    #if port_table!='': 
+    if header is False:port_headers="""<table><tr><th>SwitchName</th><th colspan=19>Port errors</th></tr>"""
+       
+    port_table = "{} {}</table>".format(port_headers,port_table)
+  #  print table_rows
+    health_status=''
+    for object in objects:
+        if object.health is False:
+            health_status+="<tr><td rowspan ={}>{}</td>".format(len(object.badports_status),object.name  )
+            for port, status in object.badports_status:
+                health_status+="<td>{}</td><td>{}</td></tr>".format(port,status)
+        if health_status:health_status= "<table><tr><th>SwitchName</th><th>Port Number</th><th>Status</th></tr> %s"%health_status
+    temp_status, sensor_status, ps_status ,fs_status = '' ,'','',''
+    temp_headers, sensor_headers, ps_headers, fs_headers= ['SensorId', 'SensorState']  ,['Sensor', 'SensorState'] ,['powersupply', 'values' ], ['fan and status','speed']
+
+    temp_obj, sensor_obj, ps_obj,fans_obj,port_obj= '','','','',''
+    for object in objects:
+        if object.temp_notok:
+            temp_obj+="<tr><td rowspan= {}>{}</td>".format(len(object.temp_notok),object.name)
+            for sensor_id,sensor_show in  object.temp_notok:
+                temp_obj+= "<td>{}</td><td>{}</td></tr>".format(sensor_id,sensor_show)
+        if object.sensor_notok:
+            sensor_obj+="<tr><td rowspan= {}>{}</td>".format(len(object.sensor_notok),object.name)
+            for sensor_id,sensor_show in  object.sensor_notok:
+                sensor_obj+= "<td>{}</td><td>{}</td></tr>".format(sensor_id,sensor_show)
+        if object.ps_notok:
+            ps_obj+="<tr><td rowspan= {}>{}</td>".format(len(object.ps_notok),object.name)
+            for sensor_id,sensor_show in  object.ps_notok:
+                ps_obj+= "<td>{}</td><td>{}</td></tr>".format(sensor_id,sensor_show)
+        if object.fans_not_ok:
+            fans_obj+="<tr><td rowspan= {}>{}</td>".format(len(object.fans_not_ok),object.name)
+            for sensor_id,sensor_show in  object.fans_not_ok:
+                fans_obj+= "<td>{}</td><td>{}</td></tr>".format(sensor_id,sensor_show)       
+        if object.badports_status: 
+            port_obj+="<tr><td rowspan= {}>{}</td>".format(len(object.badports_status),object.name)
+            for sensor_id,sensor_show in  object.badports_status:
+                port_obj+= "<td>{}</td><td bgcolor=red>{}</td></tr>".format(sensor_id,sensor_show)
+    if port_obj:
+        port_obj="<table><tr><th>Switch</th><th>port</th><th>status</th>"+port_obj+"</table>"
+
+    if temp_obj:
+        temp_status="<table><tr><th>SwitchName</th><th>"+ "</th><th>".join(temp_headers)+ "</th></tr>" + temp_obj +"</table><br><br>"
+    if sensor_obj:
+        sensor_status="<table><tr><th>SwitchName</th><th>"+ "</th><th>".join(sensor_headers)+ "</th></tr>" + sensor_obj  +"</table><br><br>"
+    if ps_obj:
+        ps_status="<table><tr><th>SwitchName</th><th>"+ "</th><th>".join(ps_headers)+ "</th></tr>" + ps_obj +"</table><br><br>"
+    if fans_obj:
+        fs_status="<table><tr><th>SwitchName</th><th>"+ "</th><th>".join(fs_headers)+ "</th></tr>" + fans_obj +"</table><br><br>"
+
+
+    mail("%s  %s </table><br>%s<br> %s <br> %s %s %s %s "%(mail_body,table_rows,port_obj,port_table ,temp_status,sensor_status,ps_status,fs_status ),paths)
+
+#    print("%s %s </table><br><br> %s <br> %s %s %s %s "%(mail_body,table_rows,port_table ,temp_status,sensor_status,ps_status,fs_status ))
+
+
+end_mail("NACONA_STR_20199350_switch_main.py ","successful",aru_start,aru_t1)
+

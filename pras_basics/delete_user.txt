@@ -1,0 +1,69 @@
+import paramiko
+import os,sys
+from email.message import Message
+import smtplib
+from email.MIMEMultipart import MIMEMultipart
+from email.MIMEText import MIMEText
+
+#ipaddresses=[ '10.244.160.34', '10.244.160.35','10.244.160.39', '10.244.160.40', '10.244.160.55', '10.244.160.44', '10.244.160.66', '10.244.160.76', '10.244.160.128', '10.244.160.156', '10.244.160.154', '10.244.160.204', '10.244.160.216', '10.244.160.56', '10.244.160.45', '10.244.160.67', '10.244.160.77', '10.244.160.129', '10.244.160.157', '10.244.160.155', '10.244.160.205', '10.244.160.217'] 
+
+sdc_ipaddresses=[('Cstorcore1a', '10.244.160.34'), ('cstorcore1b', '10.244.160.35'), ('cssanasw2', '10.244.160.39'), ('cssanbsw2', '10.244.160.40'), ('cstorfcip1', '10.244.160.36'), ('cstorfcip2', '10.244.160.37'), ('conasdc055', '10.244.160.55'), ('conasdc044', '10.244.160.44'), ('conasdc066', '10.244.160.66'), ('conasdc076', '10.244.160.76'), ('conasdc128', '10.244.160.128'), ('conasdc156', '10.244.160.156'), ('conasdc154', '10.244.160.154'), ('conasdc204', '10.244.160.204'), ('conasdc216', '10.244.160.216'), ('conasdc056', '10.244.160.56'), ('conasdc045', '10.244.160.45'), ('conasdc067', '10.244.160.67'), ('conasdc077', '10.244.160.77'), ('conasdc129', '10.244.160.129'), ('conasdc157', '10.244.160.157'), ('conasdc155', '10.244.160.155'), ('conasdc205', '10.244.160.205'), ('conasdc217', '10.244.160.217')]
+
+etc_ipaddresses=[('cona-core-1a', '10.244.144.133'), ('cona-core-1b', '10.244.144.134'), ('cpsanasw2', '10.244.144.17'), ('cpsanbsw2', '10.244.144.18'), ('cptorfcip1', '10.244.144.138'), ('cptorfcip2', '10.244.144.139'), ('conaetc104', '10.244.144.104'), ('conaetc044', '10.244.144.44'), ('conaetc080', '10.244.144.80'), ('conaetc092', '10.244.144.92'), ('conaetc068', '10.244.144.68'), ('conaetc056', '10.244.144.56'), ('conaetc214', '10.244.144.214'), ('conaetc226', '10.244.144.226'), ('conaetc105', '10.244.144.105'), ('conaetc045', '10.244.144.45'), ('conaetc081', '10.244.144.81'), ('conaetc093', '10.244.144.93'), ('conaetc069', '10.244.144.69'), ('conaetc057', '10.244.144.57'), ('conaetc215', '10.244.144.215'), ('conaetc227', '10.244.144.227')]
+
+
+# Input arguments for the user to be deletedd
+user=sys.argv[1]
+
+def delete_user(ip):
+    response=os.system('ping '+ip+' -c 1')
+    if response==1:
+        return 'unable to ping'
+    try:
+        ssh=paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(ip,username="xmluser",password="xml1user")
+        stdin,stdout,stderr=ssh.exec_command("userconfig --delete "+user)
+        stdin.write('y\n')
+        stdin.flush()
+        error=stderr.readlines()
+    #print error
+        if error:
+            return error
+        data=stdout.readlines()
+        print data
+        ssh.close()
+        return data[-1]
+    except Exception as e:
+        return 'Connection refused'+'\n'
+
+
+def mail(html_data):
+    fromaddr = "CONA_SAA@capgemini.com" #CONA-SAA ADMIN
+    toaddr="conastorage.nar@capgemini.com" #conastorage.nar@capgemini.com" #conastorage.nar@capgemini.com
+    ccaddr="prasanna.kandregula@capgemini.com"
+    msg = MIMEMultipart()
+    msg['From'] = fromaddr
+    msg['To'] = toaddr
+    msg['cc']=ccaddr
+    msg['Subject'] = "Deletion of User in Brocade switches"
+    msg.attach(MIMEText(html_data,'plain'))
+    toaddrs=[toaddr]+[ccaddr]
+    server = smtplib.SMTP('161.162.144.164') #cona SMTP
+    text = msg.as_string()
+    print "Sending Mail..........\n"
+    server.sendmail(fromaddr,toaddrs,text)
+    print "Mail Sent Successfully..........\n"
+    server.quit()
+
+
+mesg=''
+for name,ip in etc_ipaddresses+sdc_ipaddresses:
+    response=delete_user(ip)
+    if response.endswith('has been successfully deleted.'):
+        mesg+=name+'('+ip+')'+'\t'+'Account has been deleted'
+    else:
+        mesg+=name+'('+ip+')'+'\t'
+        mesg+='\t'+response
+
+mail('Hi Team,\n\n Status of deletion of user '+user+'\n\n'+mesg)

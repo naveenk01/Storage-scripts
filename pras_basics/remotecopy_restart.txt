@@ -1,0 +1,148 @@
+from mail_aru import start_mail,end_mail
+
+start,t1=start_mail("NACONA_STR_20199341_remotecopy_restart_v7k")
+
+import sys, cmd,os, paramiko
+import storage_decrypt_a
+from email.message import Message
+import smtplib
+from email.MIMEMultipart import MIMEMultipart
+from email.MIMEText import MIMEText
+
+username, password = storage_decrypt_a.decryption('10.244.144.110')
+
+ssh=paramiko.SSHClient()
+ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+ssh.connect('10.244.144.110',username=username,password=password)
+stdin,stdout,stderr=ssh.exec_command("lsrcrelationship -delim : -nohdr")
+
+data=stdout.readlines()
+
+StoppedCG, stoppedVolumes, disconnected= [], [], []
+report = []
+
+def mail(html_data):    
+    fromaddr = "CONA_SAA@capgemini.com" #CONA-SAA ADMIN
+    toaddr="conastorage.nar@capgemini.com"
+    ccaddr="prasanna.kandregula@capgemini.com" 
+    msg = MIMEMultipart()
+    msg['From'] = fromaddr
+    msg['To'] = toaddr
+    msg['cc']=ccaddr
+    msg['Subject'] = "CONA V7000 Remote copy relationships status-Sending status didn't restart any"
+    msg.attach(MIMEText(html_data,'html'))
+    toaddrs=[toaddr]+[ccaddr]
+    server = smtplib.SMTP('161.162.144.164') #cona SMTP
+    text = msg.as_string()
+    print "Sending Mail..........\n"
+    server.sendmail(fromaddr,toaddrs,text)
+    print "Mail Sent Successfully..........\n"
+    server.quit()
+
+
+for line in data:
+    line=line.split(":")
+    status = line[13].strip()
+    cg=line[12].strip()
+    fcmapname = line[1]
+    if status in ["consistent_synchronized","consistent_copying","inconsistent_copying","idling"]:
+        continue
+    elif status in ["inconsistent_stopped","consistent_stopped" ]:
+        if cg == "":
+            stoppedVolumes.append((fcmapname,status)) 
+        else:
+            if (cg,status) not in StoppedCG:
+                StoppedCG.append((cg , status))
+    else:
+        if cg == "":
+            disconnected.append((fcmap,status))
+        else:
+            if (cg,status) not in disconnected:
+                disconnected.append((cg,status))
+
+if StoppedCG or stoppedVolumes or disconnected:
+    #mail("stoppedCG: {}\n stoppedVolumes :{}\n disconnected {} ".format(StoppedCG, stoppedVolumes, disconnected))
+    print("stoppedCG: {}\n stoppedVolumes :{}\n disconnected {} ".format(StoppedCG, stoppedVolumes, disconnected))
+else:
+    #mail("All synchronized")
+    print("All synchronized")
+
+
+
+
+
+#not pinging
+while os.system('ping 10.244.160.90 -c 2'):
+    time.sleep(5*60)
+
+output = ""
+
+
+for mapping,status in stoppedVolumes:
+    if status=="consistent_stopped":
+        #stdin,stdout,stderr=ssh.exec_command("startrcrelationship {}".format(mapping))
+    elif status=="incosistent_stopped":
+        #stdin,stdout,stderr=ssh.exec_command("startrcrelationship -force {}".format(mapping))
+    if stderr:
+        data = stderr.readlines()
+        data=[i for i in data if i !='']
+        data="\n".join(data)
+        if data:
+           output+="<tr><td>%s</td><td>%s</td></tr>"%(mapping,data)
+    stdin,stdout,stderr =ssh.exec_command("lsrcrelationship -delim : {}".format(mapping))
+    print stderr.readlines()
+    data=stdout.readlines()
+    print(data)
+    status = data[13].split(':')[1].strip()
+    output+="<tr><td>{}</td><td>{}</td></tr>".format(mapping,status)
+
+
+    
+
+for cg,status in StoppedCG:
+    if status=="consistent_stopped":
+        #stdin,stdout,stderr=ssh.exec_command("startrcconsistgrp {}".format(cg))
+    elif status=="incosistent_stopped":
+        #stdin,stdout,stderr=ssh.exec_command("startrcconsistgrp -force {}".format(cg))
+
+    print(stderr.readlines())
+    if stderr: 
+        data = stderr.readlines()
+        data=[i for i in data if i!='']
+        data = "\n".join(data)
+        if data:
+           output+=" <tr> <td>{}</td><td>{}</td></tr>    ".format(cg,data)
+    stdin,stdout,stderr =ssh.exec_command("lsrcconsistgrp -delim : {}".format(cg))
+    print stderr.readlines()
+    data=stdout.readlines()
+    print(data)
+    status = data[7].split(':')[1].strip()
+    output+="<tr><td>{}</td><td>{}</td></tr>".format(cg,status)
+
+
+
+
+header = "<h4>Hi Team,</h4>"
+header+="<p><strong>Few of the remote copy relationships either disconnected or broken, Broken relationships are restarted once, Please find the current status below</strong></p>"
+header+='<table border=1 style="border-collapse: collapse; border : 1px solid black; width:60%">'
+headers= ['RemoteCopy', 'Current Status' ]
+header+='<tr bgcolor="lightblue" text-align="left"><th> {}  </th></tr>'.format('</th><th>'.join(headers))
+
+for vol in disconnected:
+    output+="<tr><td>{}</td><td>discsconnected</td></tr>".format(vol)
+if output:
+    mail(header+output+'</table>')
+
+
+
+"""
+stdin,stdout,stderr=ssh.exec_command("lseventlog -filtervalue error_code=1920")
+events=stdout.readlines()
+for eventline in events:
+    event=eventline.split()
+    eventnumber=event[0]
+    ssh.exec_command("svctask cheventlog -fix "+eventnumber)
+ 
+"""
+
+end_mail("NACONA_STR_20199341_remotecopy_restart_v7k","successful",start,t1)

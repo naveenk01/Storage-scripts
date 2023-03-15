@@ -1,0 +1,123 @@
+import CONA_performance_collect_V7000
+import CONA_performance_collect_xiv
+import MySQLdb, datetime, smtplib
+from email.MIMEMultipart import MIMEMultipart
+from email.MIMEText import MIMEText
+from email.MIMEBase import MIMEBase
+from email import encoders
+from email.MIMEImage import MIMEImage
+
+
+Datacenter = ["ETC-PROD", "SDC-DR"]
+
+
+def mail(html_data):
+    fromaddr = "CONA-SAA@capgemini.com"
+    toaddr = "conastorage.nar@capgemini.com"
+    ccaddr = "harikrishna.maddineni@capgemini.com"
+    msg = MIMEMultipart()
+    msg['From'] = fromaddr
+    msg['To'] = toaddr
+    msg['cc']=ccaddr
+    msg['Subject'] = "CONA-Performance Dashboard Internal {}".format( datetime.datetime.now().strftime("%d-%m-%Y"))
+    msg.attach(MIMEText(html_data, 'html'))
+    # This example assumes the image is in the current directory
+    fp = open('/SAA/V7000/V7000_Capacity_Performance_Dashboard/logo.jpg', 'rb')
+    msgImage = MIMEImage(fp.read())
+    fp.close()
+    # Define the image's ID as referenced above
+    msgImage.add_header('Content-ID', '<image1>')
+    msg.attach(msgImage)
+    server = smtplib.SMTP('161.162.144.164')
+    text = msg.as_string()
+    toaddrs = [toaddr] + [ccaddr]
+    print("Sending Mail..........\n")
+    server.sendmail(fromaddr, toaddr, text)
+    print("Mail Sent Successfully..........\n")
+    server.quit()
+
+
+class DataBase:
+    def __init__(self):
+        self.date = datetime.datetime.now().strftime("%Y-%m-%d")
+        self.dbh = MySQLdb.connect(host='localhost', user='cmdb', passwd='Cmdb@2015', db='storapp')
+        self.html_data = """<html><style type="text/css">
+                                                <style>
+                                                th { border:1px solid black; }
+                                                tr { border:1px solid black; }
+                                                td { border:0.5px solid black;}
+                                                table{ text-align:center; border:1px solid black;  width:50%;}
+                                                img{ display: inline-block;}
+                                                </style>
+                                                <body>
+                                                <h1 style="color:#e51b1b;"><img src="cid:image1" hspace="20" alt="CONA" WIDTH = 75 HEIGHT = 40>Performance Dashboard</h1>"""
+
+    def html_end(self):
+        return """</table><br><table border ="2" solid black ><tr><th 
+        colspan=2>Note:</th></tr><tr><th>Criteria</th><th>Color</th></tr><tr><td>70-80%</td><td 
+        bgcolor=yellow></td></tr><tr><td>>80%</td><td bgcolor=red></td></tr></table></html> """
+
+    def html_writing(self, header, Table_title):
+        Data = """<table border ="2" solid black ><tr> <th bgcolor = "powderblue";text-align:center 
+        colspan=%s>%s</th><tr>"""%(
+            len(header), Table_title)
+        for head in header:
+            Data += '<th bgcolor = "powderblue";text-align:center>{0}</th>'.format(head)
+        return Data
+
+    def html_table(self, data_list, dc, color):
+        data = ""
+        data += "<tr><td rowspan = {0}>{1}</td>".format(len(data_list), dc)
+        for val in range(0, len(data_list)):
+            for val1 in range(0, len(data_list[val])):
+                if val1 in color:
+                    if data_list[val][val1] > 10:
+                        data += "<td bgcolor='yellow'>{0}</td>".format(data_list[val][val1])
+                    elif data_list[val][val1] > 20:
+                        data += "<td bgcolor='red'>{0}</td>".format(data_list[val][val1])
+		    else:
+			data += "<td>{0}</td>".format(data_list[val][val1])
+
+                else:
+                    data += "<td>{0}</td>".format(data_list[val][val1])
+            data += "</tr>"
+        return data
+
+    def v7000_dashboard(self):
+        data = ""
+        labels = ["Data Center", "Device Name", "Throughput (Mbps)", "IOPs", "Read Latency (ms)", "Write Latency (ms)"]
+        for dc in Datacenter:
+            data_list = []
+            cursor = self.dbh.cursor()
+            cursor.execute("SELECT DISTINCT device_name, throughput, iops, read_latency, write_latency"
+                           "  from v7000_perf where date ='{0}' and dc = '{1}'".format(self.date, dc));
+            for i in range(int(cursor.rowcount)):
+                row = cursor.fetchone()
+#                v7000_device_name.append(row[0])
+                data_list.append(row)
+            data += self.html_table(data_list, dc, color=[3, 4])
+        self.html_data += self.html_writing(header=labels, Table_title="V7000 Dashboard") + data + "</table><br>"
+
+    def xiv_dashboard(self):
+        data = ''
+        labels = ["Data Center", "Device Name", "Throughput (Mbps)", "IOPs", "Latency (ms)"]
+        for dc in Datacenter:
+            data_list = []
+            cursor = self.dbh.cursor()
+            cursor.execute("SELECT DISTINCT device_name, throughput, iops, latency"
+                           "  from xiv_perf where date ='{0}' and dc = '{1}'".format(self.date, dc))
+            for i in range(int(cursor.rowcount)):
+                row = cursor.fetchone()
+                data_list.append(row)
+            data += self.html_table(data_list, dc, color=[3])
+        self.html_data += self.html_writing(header=labels, Table_title="XIV Dashboard") + data + "</table><br>"
+
+
+if __name__ == "__main__":
+    CONA_performance_collect_V7000.main()
+    CONA_performance_collect_xiv.main()
+    db = DataBase()
+    db.v7000_dashboard()
+    db.xiv_dashboard()
+    mail(db.html_data)
+

@@ -1,0 +1,243 @@
+import v7000_capacity_Collect 
+import xiv_capacity_Collect
+import isilon_capacity_collect
+import MySQLdb, datetime, smtplib
+from email.MIMEMultipart import MIMEMultipart
+from email.MIMEText import MIMEText
+from email.MIMEBase import MIMEBase
+from email import encoders
+from email.MIMEImage import MIMEImage
+
+v7000_device_name = []
+Datacenter = ['SDC-PROD', 'ETC-DR']
+
+
+def mail(html_data):
+    fromaddr = "CONA-SAA@capgemini.com"
+    ccaddr = ["ravichandir.thirugnana@capgemini.com","conastorage.nar@capgemini.com"]
+    toaddr =["rli@conaservices.com","greg.flores@capgemini.com","vipin.joganpalli@capgemini.com","kiran.urs@capgemini.com"]
+    msg = MIMEMultipart()
+    msg['From'] = fromaddr
+    msg['To'] = ",".join(toaddr)
+    msg['cc'] =  ",".join(ccaddr)
+    msg['Subject'] = "CONA - Daily Capacity Dashboard -{}".format( datetime.datetime.now().strftime("%d/%m/%Y"))
+    msg.attach(MIMEText(html_data, 'html'))
+    # This example assumes the image is in the current directory
+    fp = open('/SAA/V7000/V7000_Capacity_Performance_Dashboard/logo.jpg', 'rb')
+    msgImage = MIMEImage(fp.read())
+    fp.close()
+    # Define the image's ID as referenced above
+    msgImage.add_header('Content-ID', '<image1>')
+    msg.attach(msgImage)
+    server = smtplib.SMTP('161.162.144.164')
+    toaddrs=toaddr +ccaddr
+    text = msg.as_string()
+    print("Sending Mail..........\n")
+    server.sendmail(fromaddr,toaddrs, text)
+    #server.sendmail(fromaddr,["pkandreg@capgemini.com"] ,text)
+    print("Mail Sent Successfully..........\n")
+    server.quit()
+
+
+class DataBase:
+    def __init__(self):
+        self.date = datetime.datetime.now().strftime("%Y-%m-%d")
+        self.dbh = MySQLdb.connect(host='localhost', user='cmdb',passwd='Cmdb@2015', db='storapp')
+        self.html_data = """<html><style type="text/css">
+                                                        <style>
+                                                        th { border:1px solid black; }
+                                                        tr { border:1px solid black; }
+                                                        td { border:0.5px solid black;}
+                                                        table{ text-align:center; border:1px solid black;  width:50%;}
+                                                        img{ display: inline-block;}
+                                                        </style>
+                                                        <body>
+                                                        <h1 style="color:#e51b1b;"><img src="cid:image1" hspace="20" alt="CONA" WIDTH = 75 HEIGHT = 40>Capacity Dashboard</h1>"""
+
+    def html_end(self):
+        return """</table><br><table border ="2" solid black ><tr><th 
+        colspan=2>Note:</th></tr><tr><th>Criteria</th><th>Color</th></tr><tr><td>70-80%</td><td 
+        bgcolor=yellow></td></tr><tr><td>>80%</td><td bgcolor=red></td></tr></table></html> """
+
+    def html_writing(self, header, Table_title):
+        Data = """<table border ="2" solid black ><tr> <th bgcolor = "powderblue";text-align:center colspan=%s>%s</th><tr>"""%(
+            len(header), Table_title)
+       # Data = """<table border ="2" solid black ><tr> <th bgcolor = "powderblue";text-align:center colspan={0}>{
+       # 1}</th><tr>""".format(
+        #    len(header), Table_title)
+        for head in header:
+            Data += '<th bgcolor = "powderblue";text-align:center>{0}</th>'.format(head)
+        return Data
+
+    def html_table(self, data_list, dc):
+        data = ''
+        data += "<tr><td rowspan = {0}>{1}</td>".format(len(data_list), dc)
+        for val in range(0, len(data_list)):
+            for val1 in range(0, len(data_list[val])):
+                if val1 == 3:
+                    if data_list[val][val1] =='NA':
+                        data += "<td>{0}</td>".format(data_list[val][val1])
+                    elif data_list[val][val1] > 70 and data_list[val][val1] < 80:
+                        data += "<td bgcolor=yellow>{0}</td>".format(data_list[val][val1])
+                    elif data_list[val][val1] >= 80:
+                        data += "<td bgcolor=red>{0}</td>".format(data_list[val][val1])
+                    else:
+                        data += "<td>{0}</td>".format(data_list[val][val1])
+                elif val1 != 3:
+                    data += "<td>{0}</td>".format(data_list[val][val1])
+            data += "</tr>"
+        return data
+
+    def v7000_dashboard(self):
+        data = ''
+        labels = ["Data Center", "Device Name", "Total Capacity (TB)", "Used Capacity(TB)", "% Used",
+                  "Virtual Capacity(TB)", " %Allocated", "Free Capacity(TB)"]
+        for dc in Datacenter:
+            data_list = []
+            cursor = self.dbh.cursor()
+            cursor.execute("SELECT DISTINCT device_name, total_mdiskcap, total_usedcap,used_percent, "
+                           "total_vdisk,allocated_percent,total_freecap  from v7000_systemcap where date ='{0}' and dc = '{1}'".format(
+                self.date, dc));
+            for i in range(int(cursor.rowcount)):
+                row = cursor.fetchone()
+                v7000_device_name.append(row[0])
+                data_list.append(row)
+            data += self.html_table(data_list, dc)
+        self.html_data += self.html_writing(header=labels, Table_title="V7000 Dashboard") + data + "</table><br>"
+
+    def v7000_pool(self):
+        data = ''
+        #v7000_device_name = ['CPV7KU1FIL', 'csv7k1clst1', 'V7000B']
+        labels = ["Device Name", "Pool Name", "Capacity(TB)", "Used Capacity (TB)", "% Used", "Virtual Capacity (TB)",
+                  "%Allocated", "Free Capacity (TB)"]
+        for device in v7000_device_name:
+            data_list = []
+            cursor = self.dbh.cursor()
+            cursor.execute("SELECT DISTINCT pool_name,capacity, used_cap,used_percent,virtual_cap,"
+                           "allocated_percent,free_cap  from v7000_pool where date ='{0}' and device_name= '{1}'".format(
+                self.date, device))
+            print device
+            for i in range(int(cursor.rowcount)):
+                row = cursor.fetchone()
+                if device in ['CPV7KU1FIL','csv7ku1fclst1']:
+                    row=list(row)
+                    row[2],row[3]='NA','NA'
+                    row=tuple(row)
+                data_list.append(row)
+                print row
+            data += self.html_table(data_list, device)
+        self.html_data += self.html_writing(header=labels,
+                                            Table_title=" V7000 Pool Level Capacity") + data + "</table><br>"
+
+    def xiv_pool(self):
+        data = ''
+        labels = ["Device Name", "Name", "Soft Size (TB)", "Snap Size (TB)", "Soft Used (TB)", "Soft Used %",
+                  "Soft Available (TB)", "Hard Size (TB)", "Hard Vols (TB)", "Hard Snaps (TB)", "Vol Used%",
+                  "Hard Used (TB)", "Hard Used %", "Hard Available (TB)"]
+        for device in self.xiv_device_name:
+            data_list = []
+            cursor = self.dbh.cursor()
+            cursor.execute("SELECT DISTINCT pool_name, soft_size, snap_size, soft_used, soft_used_percent, "
+                           "soft_available, hard_size, hard_vols,hard_snaps,vol_used_percent,hard_used,hard_used_percent,"
+                           "hard_available  from xiv_pool where date ='{0}' and device_name = '{1}'".format(self.date,
+                                                                                                            device));
+            for i in range(int(cursor.rowcount)):
+                row = cursor.fetchone()
+                data_list.append(row)
+            data += "<tr><td rowspan = {0}>{1}</td>".format(len(data_list), device)
+            for val in range(0, len(data_list)):
+                for val1 in range(0, len(data_list[val])):
+                    if val1 == 9 or val1 == 4 or val1 == 11:
+                        if data_list[val][val1] > 70 and data_list[val][val1] < 80:
+                            data += "<td bgcolor=yellow>{0}</td>".format(data_list[val][val1])
+                        elif data_list[val][val1] >= 80:
+                            data += "<td bgcolor=red>{0}</td>".format(data_list[val][val1])
+                        else:
+                            data += "<td>{0}</td>".format(data_list[val][val1])
+                    else:
+                        data += "<td>{0}</td>".format(data_list[val][val1])
+                data += "</tr>"
+        self.html_data += self.html_writing(header=labels,
+                                            Table_title="XIV Pool Level Capacity") + data + "</table><br>" + self.html_end()
+
+    def xiv_dashboard(self):
+        self.xiv_device_name = []
+        data = ''
+        labels = ["Datacenter", "Name", "Hard Size (TB)", "Hard Used (TB)", "Hard Utilization %", "Hard Available (TB)",
+                  "Soft Size (TB)", "Soft Used (TB)", "Soft Utilization%", "Soft Available (TB)", "Allocated %",
+                  "10% Required for Perf reservation", "Available Space (TB) for provisioning"]
+        for dc in Datacenter:
+            data_list = []
+            cursor = self.dbh.cursor()
+            cursor.execute(
+                "SELECT DISTINCT device_name, hard_size,hard_used,hard_used_percent,hard_available, soft_size, "
+                "soft_used, soft_used_percent, soft_available,allocated_percent,perf_resv,available_space  from "
+                "xiv_syscap where date ='{0}' and dc = '{1}'".format(
+                    self.date, dc));
+            for i in range(int(cursor.rowcount)):
+                row = cursor.fetchone()
+                self.xiv_device_name.append(row[0])
+                data_list.append(row)
+            data += "<tr><td rowspan = {0}>{1}</td>".format(len(data_list), dc)
+            for val in range(0, len(data_list)):
+                for val1 in range(0, len(data_list[val])):
+                    if val1 == 3 or val1 == 7:
+                        if data_list[val][val1] > 70 and data_list[val][val1] < 80:
+                            data += "<td bgcolor=yellow>{0}</td>".format(data_list[val][val1])
+                        elif data_list[val][val1] >= 80:
+                            data += "<td bgcolor=red>{0}</td>".format(data_list[val][val1])
+                        else:
+                            data += "<td>{0}</td>".format(data_list[val][val1])
+                    else:
+                        data += "<td>{0}</td>".format(data_list[val][val1])
+                data += "</tr>"
+
+        self.html_data += self.html_writing(header=labels, Table_title="XIV Dashboard") + data + "</table><br>"
+
+    def isilon_dashboard(self):
+        labels=["DataCenter","Name", "UsedCapacity", "Used%", "TotalCapacity","AllocatedCapacity","Allocated%"]
+        data=''
+        for dc in Datacenter:
+            data_list = []
+            cursor = self.dbh.cursor()
+            print(
+                "SELECT DISTINCT device_name,total_usedcap,used_percent,total_mdiskcap,"
+                "total_vdisk,allocated_percent  from"
+                "isilon_systemcap where date ='{0}' and dc = '{1}'".format(self.date, dc))
+
+            cursor.execute(
+                "SELECT DISTINCT device_name,total_usedcap,used_percent,total_mdiskcap,"
+                "total_vdisk,allocated_percent  from"
+                " isilon_systemcap where date ='{0}' and dc = '{1}'".format(self.date, dc))
+
+            data += "<tr><td rowspan = {0}>{1}</td>".format(int(cursor.rowcount), dc)
+            for i in range(int(cursor.rowcount)):
+                row=cursor.fetchone()
+                for column_number, value in enumerate(row):
+                    if column_number in [2,5]:
+                        if 70<value<80:
+                            data += "<td bgcolor=yellow>{0}</td>".format(value)
+                        elif value>80:
+                            data += "<td bgcolor=red>{0}</td>".format(value)
+                        else:
+                            data += "<td>{0}</td>".format(value)
+                    else:
+                        data += "<td>{0}</td>".format(value)
+            data+="</tr>"
+        self.html_data += self.html_writing(header=labels, Table_title="Isilon Dashboard") + data + "</table><br>"
+
+
+
+
+
+if __name__ == '__main__':
+    v7000_capacity_Collect.main()
+    xiv_capacity_Collect.main()
+    isilon_capacity_collect.main()
+    db = DataBase()
+    db.v7000_dashboard()
+    db.xiv_dashboard()
+    db.isilon_dashboard()
+    db.v7000_pool()
+    db.xiv_pool()
+    mail(db.html_data+"""<br><span><font size="3">Regards,</span><br><span>StorageAdmin</span>""")

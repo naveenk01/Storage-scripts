@@ -1,0 +1,91 @@
+from mail_aru import start_mail,end_mail
+
+aru_start,aru_t1=start_mail("NACONA_STR_20199337_csv7k1clst1_userAddition")
+
+import os
+import time
+import sys
+import paramiko
+import datetime
+from email.message import Message
+import smtplib
+from email.MIMEMultipart import MIMEMultipart
+from email.MIMEText import MIMEText
+
+core_ipaddresses=[('Cstorcore1a', '10.244.160.34'), ('cstorcore1b', '10.244.160.35'), ('cssanasw2', '10.244.160.39'), ('cssanbsw2', '10.244.160.40'),('cona-core-1a', '10.244.144.133'), ('cona-core-1b', '10.244.144.134'), ('cpsanasw2', '10.244.144.17'), ('cpsanbsw2', '10.244.144.18')]
+
+sdc_ipaddresses=[('Cstorcore1a', '10.244.160.34'), ('cstorcore1b', '10.244.160.35'), ('cssanasw2', '10.244.160.39'), ('cssanbsw2', '10.244.160.40'), ('cstorfcip1', '10.244.160.36'), ('cstorfcip2', '10.244.160.37'), ('conasdc055', '10.244.160.55'), ('conasdc044', '10.244.160.44'), ('conasdc066', '10.244.160.66'), ('conasdc076', '10.244.160.76'), ('conasdc128', '10.244.160.128'), ('conasdc156', '10.244.160.156'), ('conasdc154', '10.244.160.154'), ('conasdc204', '10.244.160.204'), ('conasdc216', '10.244.160.216'), ('conasdc056', '10.244.160.56'), ('conasdc045', '10.244.160.45'), ('conasdc067', '10.244.160.67'), ('conasdc077', '10.244.160.77'), ('conasdc129', '10.244.160.129'), ('conasdc157', '10.244.160.157'), ('conasdc155', '10.244.160.155'), ('conasdc205', '10.244.160.205'), ('conasdc217', '10.244.160.217')]
+
+etc_ipaddresses=[('cona-core-1a', '10.244.144.133'), ('cona-core-1b', '10.244.144.134'), ('cpsanasw2', '10.244.144.17'), ('cpsanbsw2', '10.244.144.18'), ('cptorfcip1', '10.244.144.138'), ('cptorfcip2', '10.244.144.139'), ('conaetc104', '10.244.144.104'), ('conaetc044', '10.244.144.44'), ('conaetc080', '10.244.144.80'), ('conaetc092', '10.244.144.92'), ('conaetc068', '10.244.144.68'), ('conaetc056', '10.244.144.56'), ('conaetc214', '10.244.144.214'), ('conaetc226', '10.244.144.226'), ('conaetc105', '10.244.144.105'), ('conaetc045', '10.244.144.45'), ('conaetc081', '10.244.144.81'), ('conaetc093', '10.244.144.93'), ('conaetc069', '10.244.144.69'), ('conaetc057', '10.244.144.57'), ('conaetc215', '10.244.144.215'), ('conaetc227', '10.244.144.227')]
+
+xiv_ips=[['cpxiv1', '10.244.144.172'], ['cpxiv2', '10.244.144.191'], ['csxiv1', '10.244.160.172'], ['csxiv2', '10.244.160.191']]
+v7000_ips=[['cpv7k1clst1', '10.244.144.110'], ['cpv7k2clst1', '10.244.144.119'],['csv7k1clst1', '10.244.160.90']]
+v7000_unified_ips=[['CPV7KU1FIL', '10.244.144.124'], ['csv7ku1fclst1', '10.244.160.103']]
+
+# Input arguments for the user to be created
+users=sys.argv[1]
+password=sys.argv[2]
+role=sys.argv[3]
+users=map(str, users.strip('[]').split(','))
+print users
+#print password
+#print role
+#date=datetime.date.strftime(datetime.date.today(),"%y-%m-%d")
+
+def createuser(i,name):
+    try:
+        name,ipaddress=name,i
+        r=os.system('ping '+ipaddress+' -c 2')
+        string=name+'('+i+')'
+        print(string+'\t'+str(r))
+        if r==1:
+            string+='not able to ping'+'\n'
+            return string
+        ssh=paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(ipaddress,username="xmluser",password="xml1user")
+        if (name,ip) in core_ipaddresses:
+            stdin,stdout,stderr=ssh.exec_command('userConfig --add {} -l 1-128 -c {} -r {} -p {}'.format(user,role,role,password))
+        else:
+            stdin,stdout,stderr=ssh.exec_command('userconfig --add '+user+' -r '+role+' -d '+user+' -p '+password)
+        data=stderr.readlines()
+        if data:
+            string+='\t'.join(data)
+        else:
+            response=stdout.readlines()
+            string+='\t'.join(response)
+        ssh.close()
+        print string
+        return string
+
+    except Exception as err:
+        print str(err)
+        return name+'('+i+')'+'\t'+'\t'+'unable to login'
+
+#send mail          
+def mail(html_data):
+    fromaddr = "CONA_SAA@capgemini.com" #CONA-SAA ADMIN
+    toaddr="conastorage.nar@capgemini.com"
+    ccaddr="prasanna.kandregula@capgemini.com"
+    msg = MIMEMultipart()
+    msg['From'] = fromaddr
+    msg['To'] = toaddr
+    msg['cc']=ccaddr
+    msg['Subject'] = "Status of User creation in Brocade switches"
+    msg.attach(MIMEText(html_data,'plain'))
+    toaddrs=[toaddr]+[ccaddr]
+    server = smtplib.SMTP('161.162.144.164') #cona SMTP
+    text = msg.as_string()
+    print "Sending Mail..........\n"
+    server.sendmail(fromaddr,toaddrs,text)
+    print "Mail Sent Successfully..........\n"
+    server.quit()
+
+mesg=''
+for user in users:
+    mesg=''
+    print user
+    for name,ip in etc_ipaddresses+sdc_ipaddresses:
+        mesg+=createuser(ip,name)+'\n'
+    mail('Hi Team,'+'\n\n'+ 'Status of  creation of user '+user+' in Switches'+'\n'+mesg)
+end_mail("NACONA_STR_20199337_csv7k1clst1_userAddition","successful",aru_start,aru_t1)

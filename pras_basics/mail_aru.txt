@@ -1,0 +1,52 @@
+import socket,re
+from time import strftime,time
+import datetime
+import smtplib
+from email.MIMEMultipart import MIMEMultipart
+from email.MIMEText import MIMEText
+
+def start_mail(scriptname):
+	startTime = datetime.datetime.now()
+	endPointName=socket.gethostname()
+	s1=time()
+	return startTime,s1
+
+
+def end_mail(scriptname,status,startTime,S1):
+	print "AUR mail End"
+        scriptname=scriptname.replace("CONA","COA")
+        scriptname=re.sub( r'(.*_\d+_)', r'\1Script_',scriptname) 
+	endTime = datetime.datetime.now()
+	endPointName=socket.gethostname()
+	inputType = "Email"
+	S2=time()
+	duration = int(S2 - S1)
+	print("Sending Email")
+	msgRoot = MIMEMultipart('related')
+	msgRoot['Subject'] ="AUR_"+ scriptname
+	msgRoot['From'] = "CONA-SAA@capgemini.com" 
+	msgRoot['To'] = "hpoperations.in@capgemini.com"
+	msgRoot['To']="conastorage.nar@capgemini.com"
+       # msgRoot['To']="niranjan.karunanidhi@capgemini.com"
+	html ="""<html>
+	<body>
+	##AUR_START##<br>
+	AutomationName:"""+scriptname+""" <br>
+	EndPointName:"""+endPointName+"""<br>
+	StartTime:"""+str(startTime)+"""<br>
+	DurationToFinish:"""+str(duration)+""" Seconds<br>
+	ExecutionID:"""+ scriptname.split("_")[2] +"""<br>
+	StatusOfRun:success<br>
+	InputType:"""+inputType+"""<br>
+	##AUR_END##<br><br>
+	</body>
+	</html>"""
+	msgHtml = MIMEText(html, 'html')
+	msgHtml.add_header('Content-Disposition', 'inline')
+	msgRoot.attach(msgHtml)
+	s = smtplib.SMTP('161.162.144.164')
+	sender= "CONA-SAA@capgemini.com"
+        recipient =["hpoperations.in@capgemini.com","conastorage.nar@capgemini.com"]
+	s.sendmail(sender, recipient, msgRoot.as_string())
+	s.quit()
+	print("email sent successfully")

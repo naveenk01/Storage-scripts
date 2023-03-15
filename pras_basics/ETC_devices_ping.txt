@@ -1,0 +1,70 @@
+import os
+import time
+from email.message import Message
+import smtplib
+from email.MIMEMultipart import MIMEMultipart
+from email.MIMEText import MIMEText
+
+ipaddresses=['10.244.144.110', '10.244.144.119', '10.244.144.124', '10.244.144.127', '10.244.144.172', '10.244.144.173', '10.244.144.174', '10.244.144.191', '10.244.144.192', '10.244.144.193', '10.244.144.133', '10.244.144.134', '10.244.144.17', '10.244.144.18', '10.244.144.138', '10.244.144.139', '10.244.144.104', '10.244.144.44', '10.244.144.80', '10.244.144.92', '10.244.144.68', '10.244.144.56', '10.244.144.214', '10.244.144.226', '10.244.144.105', '10.244.144.45', '10.244.144.81', '10.244.144.93', '10.244.144.69', '10.244.144.57', '10.244.144.215', '10.244.144.227']
+
+not_pingables=[]
+
+# -> comment
+
+#pings the ip given to it as paramater
+def ping_check(ip):
+    return os.system('ping '+ip+' -c 3') #returns 1/0  0->pingable 1->not pingable
+    
+
+#first ping of all devices
+for ipaddress in ipaddresses:
+    response=ping_check(ipaddress)
+    #print response
+    if response!=0:
+        not_pingables.append(ipaddress)
+
+count=1
+#second and third ping of the not pingable devices
+while not_pingables and count<=2:
+    time.sleep(300) #waits for 300seconds before executing below steps
+    pingables=[]
+    for ip in not_pingables:
+        res=ping_check(ip)
+        if res == 0:
+            pingables.append(ip)
+            
+    #if any device is pinging - removes from not_pingables     
+    if pingables:
+        for ip in pingables:
+            not_pingables.remove(ip)
+    count+=1
+
+
+
+#send mail          
+def mail(html_data):    
+    fromaddr = "CONA_SAA@capgemini.com" #CONA-SAA ADMIN
+    toaddr="conastorage.nar@capgemini.com" #conastorage.nar@capgemini.com
+    ccaddr="prasanna.kandregula@capgemini.com" 
+    msg = MIMEMultipart()
+    msg['From'] = fromaddr
+    msg['To'] = toaddr
+    msg['cc']=ccaddr
+    msg['Subject'] = "CONA- Pinging XIV,V7000 and switches"
+    msg.attach(MIMEText(html_data,'plain'))
+    toaddrs=[toaddr]+[ccaddr]
+    server = smtplib.SMTP('161.162.144.164') #cona SMTP
+    text = msg.as_string()
+    print "Sending Mail..........\n"
+    server.sendmail(fromaddr,toaddrs,text)
+    print "Mail Sent Successfully..........\n"
+    server.quit()
+
+#send email if not able to ping devices even after 3 times
+
+if not_pingables:
+    string='\n'.join(not_pingables)
+    mail('Hi Team,\n\nNot able to ping below ETC devices:\n'+string)
+#else:
+ #   mail('Hi Team, \n\n All ETC devices are pingable')
+

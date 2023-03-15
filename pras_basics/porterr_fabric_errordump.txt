@@ -1,0 +1,113 @@
+
+
+
+from mail_aru import start_mail,end_mail
+
+aru_start,aru_t1=start_mail("NACONA_STR_20199344_eventlogs_sdc")
+
+import os
+import paramiko
+import datetime
+from email.message import Message
+import smtplib
+from email.MIMEMultipart import MIMEMultipart
+from switch_decrypt import decryption
+from email.MIMEText import MIMEText
+from email.MIMEBase import MIMEBase
+from email import Encoders
+
+def events_collect(ip,name,path):
+    output=''
+    try:
+        ssh=paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        user,pwd=decryption(ip)
+        ssh.connect(ip,username=user,password=pwd)
+        f=open(path,'w')
+        commands = ['porterrshow', 'fabriclog -s','errDump']
+        f.write("{} ({})".format(name,ip)+'\r\n' )
+        for command in commands:
+            stdin,stdout,stderr=ssh.exec_command(command)
+            f.write("=====================================================================================\r\n")
+            f.write(command +'\r\n')
+    #        f.write(''')
+            for line in stdout:
+    #            print(line)
+                f.write(line)
+                f.write("\r\n")
+            f.write("===================================================================================\r\n")  
+        f.close()
+    except Exception as e:
+        output="<tr><th>{}</th><td> {}</td></tr>".format(name,str(e))
+    if output=='':
+        output = "<tr><th>{}</th><td>Event logs collected successfully</td></tr>".format(name)
+    ssh.close()
+#    f.close()
+    print output
+    return output
+
+
+def mail(html_data,paths):    
+    fromaddr = "CONA_SAA@capgemini.com" #CONA-SAA ADMIN
+    toaddr="conastorage.nar@capgemini.com"
+    ccaddr="prasanna.kandregula@capgemini.com" 
+    msg = MIMEMultipart()
+    msg['From'] = fromaddr
+    msg['To'] = toaddr
+    msg['cc']=ccaddr
+    msg['Subject'] = "SDC-Event-logs collection status"
+    for path in paths:
+        if not os.path.isfile(path):continue
+        part = MIMEBase('application', "octet-stream")
+        part.set_payload(open(path, "rb").read())
+        Encoders.encode_base64(part)
+        part.add_header('Content-Disposition', 'attachment', filename=path)
+        msg.attach(part)
+    msg.attach(MIMEText(html_data,'html'))
+    toaddrs=[toaddr]+[ccaddr]
+    server = smtplib.SMTP('161.162.144.164') #cona SMTP
+    text = msg.as_string()
+    print "Sending Mail..........\n"
+    server.sendmail(fromaddr,toaddrs,text)
+    print "Mail Sent Successfully..........\n"
+    server.quit()
+
+
+ipaddresses=[('Cstorcore1a', '10.244.160.34'), ('cstorcore1b', '10.244.160.35'), ('cssanasw2', '10.244.160.39'), ('cssanbsw2', '10.244.160.40'), ('cstorfcip1', '10.244.160.36'), ('cstorfcip2', '10.244.160.37'), ('conasdc055', '10.244.160.55'), ('conasdc044', '10.244.160.44'), ('conasdc066', '10.244.160.66'), ('conasdc128', '10.244.160.128'), ('conasdc156', '10.244.160.156'), ('conasdc154', '10.244.160.154'), ('conasdc204', '10.244.160.204'), ('conasdc216', '10.244.160.216'), ('conasdc056', '10.244.160.56'), ('conasdc045', '10.244.160.45'), ('conasdc067', '10.244.160.67'), ('conasdc129', '10.244.160.129'), ('conasdc157', '10.244.160.157'), ('conasdc155', '10.244.160.155'), ('conasdc205', '10.244.160.205'), ('conasdc217', '10.244.160.217')]
+
+#ipaddresses=[('conasdc217', '10.244.160.217'),('dub','10.244.160.205')]
+
+response =''
+paths=[]
+for name,ip in ipaddresses:
+    path='/SAA/switch/eventlogs/{}.txt'.format(name)
+    paths.append(path)
+    respons=events_collect(ip,name,path)+'\n'
+#    print(respons)
+    response+=respons
+response="<tr bgcolor=#b0e0e6><th>switch</th><th>Status</th></tr>{}</table>".format(response)
+
+mail_part = """<html><style type="text/css">
+                <style>
+                th { border:2px solid black; }
+                tr { border:2px solid black; }
+                td { border:2px solid black;}
+                table{ text-align:left;padding:5px; border:2px solid black;border-collapse:collapse;}
+                img{ display: inline-block;}
+                #caption { background-color:blue;color:#f7f7f7}
+                </style>
+                <body>"""
+header = "Hi Team,\n please find the attached documents and status of Event logs collection\n\n"
+
+mail_part="""<html><body style="font-size: 14px;font-family: Arial">{}<br><br>
+<table border=1 width="700" style="border : 2px solid black; -moz-border-radius: 5px;-webkit-border-radius: 5px; font-size: 14px;font-family: Arial">""".format(header)
+
+
+mail(mail_part+response,paths)
+for path in paths:
+    if os.path.exists(path):
+        print(os.remove(path))
+    else:
+        print(path+"  does not exists")
+       
+end_mail("NACONA_STR_20199344_eventlogs_sdc","successful",aru_start,aru_t1)
